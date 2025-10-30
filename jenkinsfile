@@ -1,54 +1,50 @@
 pipeline {
     agent {
-        label 'arathi-ubuntu-a'
-    }
-    triggers {
-        pollSCM('H/3 * * * *') // checks every 3 mins, or
-        // OR use GitHub webhook instead (recommended)
+        label 'arathi-agent-a'
     }
 
     environment {
-        DOCKERHUB_USER = 'arathi'
-        IMAGE_NAME = 'jenkins-docker-lab'
-        SONARQUBE = 'SonarCloud'
-        SONAR_TOKEN = credentials('arathi-sonar-token')
-
+        VAULT_ADDR = 'http://34.228.140.38:8400/'
+        SONAR_SCANNER_VERSION = '7.2.0.5079'
     }
-   
-     stages {
-        stage('Cleanup') {
+
+    stages {
+
+        /* ── S1: Clean workspace ─────────────────────────────────────────────── */
+        stage('Clean Workspace') {
             steps {
                 cleanWs()
             }
         }
-        stage('Checkout') {
+
+        /* ── S2: Clone SCM ───────────────────────────────────────────────────── */
+        stage('Clone SCM') {
             steps {
                 checkout scm
             }
         }
-         stage('GitLeaks Scan') {
+
+        /* ── S3: Run Gitleaks Scan ───────────────────────────────────────────── */
+        stage('Gitleaks Scan') {
             steps {
-                sh '''#!/bin/bash
-                    set -eux
-                    # Install gitleaks if not present
-                    if ! command -v gitleaks &> /dev/null; then
-                        echo "Installing Gitleaks..."
-                        wget https://github.com/zricethezav/gitleaks/releases/download/v8.18.1/gitleaks_8.18.1_linux_x64.tar.gz
-                        tar -xzf gitleaks_8.18.1_linux_x64.tar.gz
-                        chmod +x gitleaks
-                        sudo mv gitleaks /usr/local/bin/
-                    fi
-                    # Run gitleaks detect even if from non commited codes
+                sh '''
+                set -eux
+                if ! command -v gitleaks &> /dev/null; then
+                    echo "Installing Gitleaks..."
+                    wget -q https://github.com/zricethezav/gitleaks/releases/download/v8.18.1/gitleaks_8.18.1_linux_x64.tar.gz
+                    tar -xzf gitleaks_8.18.1_linux_x64.tar.gz
+                    chmod +x gitleaks
+                    sudo mv gitleaks /usr/local/bin/
+                fi
 
-
-                    echo "🔍 Running Gitleaks scan..."
-                    set +e  # temporarily disable fail-fast
-                    gitleaks detect --source python_app --no-git --verbose --report-path gitleaks-report.json 
-                    result=$?  # capture exit status
-                    set -e  # re-enable fail-fast
+                echo "🔍 Running Gitleaks scan..."
+                set +e
+                gitleaks detect --source python_app --no-git --verbose --report-path gitleaks-report.json
+                result=$?
+                set -e
 
                 if [ "$result" -ne 0 ]; then
-                    echo "❌ Gitleaks found leaks (exit code $result)"
+                    echo "❌ Gitleaks found potential leaks!"
                     exit 1
                 else
                     echo "✅ No leaks found."
@@ -57,154 +53,80 @@ pipeline {
             }
         }
 
-        stage('Python Setup & Test with Coverage') {
-            steps {
-                dir('python_app') {
-                    sh '''#!/bin/bash
-                        set -euxo pipefail
-                        rm -rf venv
-                        python3 -m venv venv
-                        ./venv/bin/pip install --upgrade pip
-                        ./venv/bin/pip install -r requirements.txt
-                        ./venv/bin/python -m pytest tests/ --maxfail=1 --disable-warnings -q \
-                            --cov=. --cov-report=xml:../coverage.xml
-                    '''               
-                }
-            }
-        }
-
+        /* ── S4: Run SonarQube Analysis ──────────────────────────────────────── */
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv(credentialsId: 'arathi-sonar-token', installationName: 'arathi-sq') {
-                    sh '''#!/bin/bash
-                        set -eux
-                        echo "=== SonarQube installation ==="
-                        export SONAR_SCANNER_VERSION=7.2.0.5079
-                        export SONAR_SCANNER_HOME=$HOME/.sonar/sonar-scanner-$SONAR_SCANNER_VERSION-linux-x64
-                        curl --create-dirs -sSLo $HOME/.sonar/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-$SONAR_SCANNER_VERSION-linux-x64.zip
-                        unzip -o $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
-                        export PATH=$SONAR_SCANNER_HOME/bin:$PATH
+                withSonarQubeEnv('arathi-sq') {
+                    sh '''
+                    echo "=== Running SonarQube Scanner ==="
+                    export SONAR_SCANNER_HOME=$HOME/.sonar/sonar-scanner-${SONAR_SCANNER_VERSION}-linux-x64
+                    if [ ! -d "$SONAR_SCANNER_HOME" ]; then
+                        mkdir -p $HOME/.sonar
+                        curl -sSLo $HOME/.sonar/sonar-scanner.zip \
+                            https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SONAR_SCANNER_VERSION}-linux-x64.zip
+                        unzip -oq $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar
+                    fi
+                    export PATH=$SONAR_SCANNER_HOME/bin:$PATH
 
-                        echo "=== Running SonarQube Scanner ==="
-                        sonar-scanner \
-                        -Dsonar.organization="arathipm" \
-                        -Dsonar.projectKey="ArathiPM_DevSecOps-Integration" \
-                        -Dsonar.host.url=https://sonarcloud.io \
-                        -Dsonar.sources=. \
-                        -Dsonar.python.coverage.reportPaths=coverage.xml \
-                        -Dsonar.c.file.suffixes=- \
-                        -Dsonar.cpp.file.suffixes=- \
-                        -Dsonar.objc.file.suffixes=- \
-                        -Dsonar.login=$SONAR_TOKEN \
-                        -Dsonar.exclusions=**/venv/**,**/__pycache__/**,**/tests/** \
-                        '''
+                    sonar-scanner \
+                      -Dsonar.organization=arathipm \
+                      -Dsonar.projectKey=ArathiPM_DevSecOps-Integration \
+                      -Dsonar.host.url=https://sonarcloud.io \
+                      -Dsonar.sources=. \
+                      -Dsonar.python.coverage.reportPaths=coverage.xml \
+                      -Dsonar.token=$SONAR_TOKEN
+                    '''
                 }
             }
         }
-         stage('Quality Gate') {
+
+        /* ── S5: Check Quality Gate ──────────────────────────────────────────── */
+        stage('Quality Gate') {
             steps {
                 script {
                     timeout(time: 2, unit: 'MINUTES') {
-                        def qg = waitForQualityGate abortPipeline: true
+                        def qg = waitForQualityGate()
                         echo "Quality Gate status: ${qg.status}"
+                        if (qg.status != 'OK') {
+                            error "Pipeline failed due to Quality Gate status: ${qg.status}"
+                        }
                     }
                 }
             }
         }
-        stage('Clean up image and container') {
+
+        /* ── S6: Docker Build for the Python App ─────────────────────────────── */
+        stage('Docker Build for Python App') {
             steps {
-                script {
-                    sh 'docker rm  jenkins_app -f || true'
-                    sh 'docker image rmi $DOCKERHUB_USER/$IMAGE_NAME:latest || true'
-                    sh 'docker rm python-new-app -f || true'
-                }
-            }  
-        }
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    sh 'docker build -t $DOCKERHUB_USER/$IMAGE_NAME:latest python_app'
-                    sh 'docker run -d -p 8005:5000 --name python-new-app $DOCKERHUB_USER/$IMAGE_NAME:latest'
-                }
-            }
-        }
-        stage('Scan Docker Image with Trivy') {
-            steps {
-                // Scan and save report
                 sh '''
-                  mkdir -p trivy-reports
-                  trivy image --no-progress --exit-code 0 --format table -o trivy-reports/report.txt $DOCKERHUB_USER/$IMAGE_NAME
-                  cat trivy-reports/report.txt
+                echo "🧹 Cleaning up any previous containers/images"
+                docker rm -f py-app || true
+                docker rmi -f flask-vault-app:latest || true
+
+                echo "🐳 Building new Docker image..."
+                docker build -t flask-vault-app:latest python_app
                 '''
             }
         }
-        stage('Archive Trivy Report') {
-            steps {
-                archiveArtifacts artifacts: 'trivy-reports/report.txt', fingerprint: true
-            }
-        }
-        stage('OWASP ZAP Scan') {
-    steps {
-        sh '''#!/bin/bash
-        # Use Bash explicitly so "pipefail" works
-        set -euxo pipefail
- 
-        TARGET_URL="http://3.95.132.95:8005"
-        echo "🔄 Waiting for app to start..."
-        for i in {1..10}; do
-            if curl -s --max-time 5 $TARGET_URL >/dev/null; then
-                echo "✅ App is up!"
-                break
-            fi
-            sleep 5
-        done
- 
-        echo "🚀 Running OWASP ZAP Baseline Scan..."
-        # Run ZAP in Docker; ignore exit code (ZAP returns 2 for warnings)
-        docker run --rm -v $(pwd):/zap/wrk/:rw \
-            --network="host" \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t $TARGET_URL -r zap_report.html || true
- 
-        mkdir -p reports
-        mv zap_report.html reports/
- 
-        echo "🔍 Checking ZAP results for FAIL-NEW entries..."
-        FAIL_COUNT=$(grep -oE "FAIL-NEW: [0-9]+" reports/zap_report.html | awk '{print $2}' || echo 0)
- 
-        # If grep finds nothing, default to 0
-        if [ -z "$FAIL_COUNT" ]; then
-            FAIL_COUNT=0
-        fi
- 
-        if [ "$FAIL_COUNT" -gt 0 ]; then
-            echo "❌ ZAP found $FAIL_COUNT high-severity vulnerabilities!"
-            exit 1
-        else
-            echo "✅ No high-severity vulnerabilities found. Build will continue."
-        fi
-        '''
-    }
-    post {
-        always {
-            archiveArtifacts artifacts: 'reports/zap_report.html', fingerprint: true
-        }
-        success {
-            echo '✅ ZAP scan completed successfully — only warnings or no issues.'
-        }
-        failure {
-            echo '❌ Build failed because high-severity issues were found in ZAP scan.'
-        }
-    }
-}
-    }
 
-    post {
-        success {
-            echo 'Pipeline completed successfully!'
-        }
-        failure {
-            echo 'Pipeline failed.'
+        /* ── S7: Trivy Image Scan ────────────────────────────────────────────── */
+        stage('Trivy Image Scan') {
+            steps {
+                sh '''
+                echo "🔎 Running Trivy vulnerability scan..."
+                mkdir -p reports
+                docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v $(pwd)/reports:/reports aquasec/trivy:latest image \
+                    --format html \
+                    --output /reports/trivy-report.html \
+                    flask-vault-app:latest
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'reports/trivy-report.html', fingerprint: true
+                }
+            }
         }
     }
 }
