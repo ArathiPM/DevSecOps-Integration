@@ -56,40 +56,40 @@ pipeline {
         /* ── S4: Run SonarQube Analysis ──────────────────────────────────────── */
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('arathi-sq') {
-                    sh '''
-                    echo "=== Running SonarQube Scanner ==="
-                    export SONAR_SCANNER_HOME=$HOME/.sonar/sonar-scanner-${SONAR_SCANNER_VERSION}-linux-x64
-                    if [ ! -d "$SONAR_SCANNER_HOME" ]; then
-                        mkdir -p $HOME/.sonar
-                        curl -sSLo $HOME/.sonar/sonar-scanner.zip \
-                            https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SONAR_SCANNER_VERSION}-linux-x64.zip
-                        unzip -oq $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar
-                    fi
-                    export PATH=$SONAR_SCANNER_HOME/bin:$PATH
+                withSonarQubeEnv(credentialsId: 'arathi-sonar-token', installationName: 'arathi-sq') {
+                    sh '''#!/bin/bash
+                        set -eux
+                        echo "=== SonarQube installation ==="
+                        export SONAR_SCANNER_VERSION=7.2.0.5079
+                        export SONAR_SCANNER_HOME=$HOME/.sonar/sonar-scanner-$SONAR_SCANNER_VERSION-linux-x64
+                        curl --create-dirs -sSLo $HOME/.sonar/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-$SONAR_SCANNER_VERSION-linux-x64.zip
+                        unzip -o $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
+                        export PATH=$SONAR_SCANNER_HOME/bin:$PATH
 
-                    sonar-scanner \
-                      -Dsonar.organization=arathipm \
-                      -Dsonar.projectKey=ArathiPM_DevSecOps-Integration \
-                      -Dsonar.host.url=https://sonarcloud.io \
-                      -Dsonar.sources=. \
-                      -Dsonar.python.coverage.reportPaths=coverage.xml \
-                      -Dsonar.token=$SONAR_TOKEN
-                    '''
+                        echo "=== Running SonarQube Scanner ==="
+                        sonar-scanner \
+                        -Dsonar.organization="arathipm" \
+                        -Dsonar.projectKey="ArathiPM_DevSecOps-Integration" \
+                        -Dsonar.host.url=https://sonarcloud.io \
+                        -Dsonar.sources=. \
+                        -Dsonar.python.coverage.reportPaths=coverage.xml \
+                        -Dsonar.c.file.suffixes=- \
+                        -Dsonar.cpp.file.suffixes=- \
+                        -Dsonar.objc.file.suffixes=- \
+                        -Dsonar.login=$SONAR_TOKEN \
+                        -Dsonar.exclusions=**/venv/**,**/__pycache__/**,**/tests/** \
+                        '''
                 }
             }
         }
-
+         
         /* ── S5: Check Quality Gate ──────────────────────────────────────────── */
         stage('Quality Gate') {
             steps {
                 script {
                     timeout(time: 2, unit: 'MINUTES') {
-                        def qg = waitForQualityGate()
+                        def qg = waitForQualityGate abortPipeline: true
                         echo "Quality Gate status: ${qg.status}"
-                        if (qg.status != 'OK') {
-                            error "Pipeline failed due to Quality Gate status: ${qg.status}"
-                        }
                     }
                 }
             }
