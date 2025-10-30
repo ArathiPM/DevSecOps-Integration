@@ -1,6 +1,6 @@
 pipeline {
     agent {
-        label 'sha-ubuntu-node'
+        label 'arathi-ubuntu-a'
     }
     triggers {
         pollSCM('H/3 * * * *') // checks every 3 mins, or
@@ -8,10 +8,10 @@ pipeline {
     }
 
     environment {
-        DOCKERHUB_USER = 'shacloudlab'
+        DOCKERHUB_USER = 'arathi'
         IMAGE_NAME = 'jenkins-docker-lab'
         SONARQUBE = 'SonarCloud'
-        SONAR_TOKEN = credentials('sha-sonar-token')
+        SONAR_TOKEN = credentials('arathi-sonar-token')
 
     }
    
@@ -75,7 +75,7 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv(credentialsId: 'sha-sonar-token', installationName: 'sha-sq') {
+                withSonarQubeEnv(credentialsId: 'arathi-sonar-token', installationName: 'arathi-sq') {
                     sh '''#!/bin/bash
                         set -eux
                         echo "=== SonarQube installation ==="
@@ -87,8 +87,8 @@ pipeline {
 
                         echo "=== Running SonarQube Scanner ==="
                         sonar-scanner \
-                        -Dsonar.organization="shaputta" \
-                        -Dsonar.projectKey="shaputta_devsecops-project" \
+                        -Dsonar.organization="arathipm" \
+                        -Dsonar.projectKey="ArathiPM_DevSecOps-Integration" \
                         -Dsonar.host.url=https://sonarcloud.io \
                         -Dsonar.sources=. \
                         -Dsonar.python.coverage.reportPaths=coverage.xml \
