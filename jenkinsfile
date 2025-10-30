@@ -62,23 +62,24 @@ pipeline {
                         echo "=== SonarQube installation ==="
                         export SONAR_SCANNER_VERSION=7.2.0.5079
                         export SONAR_SCANNER_HOME=$HOME/.sonar/sonar-scanner-$SONAR_SCANNER_VERSION-linux-x64
-                        curl --create-dirs -sSLo $HOME/.sonar/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-$SONAR_SCANNER_VERSION-linux-x64.zip
-                        unzip -o $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
+                        curl --create-dirs -sSLo $HOME/.sonar/sonar-scanner.zip \
+                            https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-$SONAR_SCANNER_VERSION-linux-x64.zip
+                        unzip -oq $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
                         export PATH=$SONAR_SCANNER_HOME/bin:$PATH
 
                         echo "=== Running SonarQube Scanner ==="
                         sonar-scanner \
-                        -Dsonar.organization="arathipm" \
-                        -Dsonar.projectKey="ArathiPM_DevSecOps-Integration" \
-                        -Dsonar.host.url=https://sonarcloud.io \
+                        -Dsonar.organization=arathipm \
+                        -Dsonar.projectKey=ArathiPM_DevSecOps-Integration \
+                        -Dsonar.host.url=$SONAR_HOST_URL \
                         -Dsonar.sources=. \
                         -Dsonar.python.coverage.reportPaths=coverage.xml \
                         -Dsonar.c.file.suffixes=- \
                         -Dsonar.cpp.file.suffixes=- \
                         -Dsonar.objc.file.suffixes=- \
-                        -Dsonar.login=$SONAR_TOKEN \
-                        -Dsonar.exclusions=**/venv/**,**/__pycache__/**,**/tests/** \
-                        '''
+                        -Dsonar.login=$SONAR_AUTH_TOKEN \
+                        -Dsonar.exclusions=**/venv/**,**/__pycache__/**,**/tests/**
+                    '''
                 }
             }
         }
