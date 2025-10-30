@@ -1,5 +1,5 @@
 pipeline {
-    agent { label 'arathi-ubuntu-a'' }
+    agent { label 'arathi-ubuntu-a' }
 
     triggers {
         pollSCM('H/3 * * * *') // Poll every 3 mins (or use webhook)
