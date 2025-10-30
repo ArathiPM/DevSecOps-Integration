@@ -53,56 +53,30 @@ pipeline {
             }
         }
 
-        /* ───────────  Python Tests with Coverage (updated) ─────────── */
-        stage('Python Tests with Coverage') {
-            steps {
-                // Everything happens inside the python_app directory
-                dir('python_app') {
-                    sh '''
-                    set -eux
-                    rm -rf venv
-                    python3 -m venv venv
-                    ./venv/bin/pip install --upgrade pip
-                    ./venv/bin/pip install -r requirements.txt
-
-                    # Run tests and create coverage.xml INSIDE python_app folder
-                    ./venv/bin/python -m pytest tests/ \
-                    --maxfail=1 --disable-warnings -q \
-                    --cov=. --cov-report=xml:coverage.xml
-
-                    echo "=== Coverage file created at: ==="
-                    # Show exactly where the file is and its size
-                    find . -name coverage.xml -exec ls -lh {} \;
-                    '''
-                }
-            }
-        }
-
-        /* ── S4: Run SonarQube Analysis ──────────────────────────────────────── */
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv(credentialsId: 'arathi-sonar-token', installationName: 'arathi-sq') {
                     sh '''#!/bin/bash
                     set -eux
-                    echo "=== SonarQube Installation ==="
+                    echo "=== SonarQube installation ==="
                     export SONAR_SCANNER_HOME=$HOME/.sonar/sonar-scanner-${SONAR_SCANNER_VERSION}-linux-x64
                     if [ ! -d "$SONAR_SCANNER_HOME" ]; then
                         mkdir -p $HOME/.sonar
                         curl -sSLo $HOME/.sonar/sonar-scanner.zip \
-                          https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SONAR_SCANNER_VERSION}-linux-x64.zip
+                        https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SONAR_SCANNER_VERSION}-linux-x64.zip
                         unzip -oq $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar
                     fi
                     export PATH=$SONAR_SCANNER_HOME/bin:$PATH
 
                     echo "=== Running SonarQube Scanner ==="
                     sonar-scanner \
-                      -Dsonar.organization=arathipm \
-                      -Dsonar.projectKey=ArathiPM_DevSecOps-Integration \
-                      -Dsonar.host.url=$SONAR_HOST_URL \
-                      -Dsonar.sources=. \
-                      -Dsonar.python.coverage.reportPaths=coverage.xml \
-                      -Dsonar.exclusions=**/venv/**,**/__pycache__/**,**/tests/** \
-                      -Dsonar.token=$SONAR_AUTH_TOKEN
+                    -Dsonar.organization=arathipm \
+                    -Dsonar.projectKey=ArathiPM_DevSecOps-Integration \
+                    -Dsonar.host.url=$SONAR_HOST_URL \
+                    -Dsonar.sources=python_app \
+                    -Dsonar.python.coverage.reportPaths=python_app/coverage.xml \
+                    -Dsonar.exclusions=**/venv/**,**/__pycache__/**,**/tests/** \
+                    -Dsonar.token=$SONAR_AUTH_TOKEN
                     '''
                 }
             }
